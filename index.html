@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="h-full bg-slate-900 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧名片管理系統 - AI OCR & Google Sheet Sync</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Font (Inter) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        
+        @keyframes scan {
+            0% { top: 0%; opacity: 0.8; }
+            50% { opacity: 1; }
+            100% { top: 100%; opacity: 0.8; }
+        }
+        .scan-laser { animation: scan 2s infinite ease-in-out alternate; }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased selection:bg-brand-500 selection:text-white">
+
+    <!-- Top Header Bar -->
+    <header class="bg-slate-800/90 backdrop-blur border-b border-slate-700/60 sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <!-- Logo & Title -->
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-400 flex items-center justify-center text-white shadow-lg shadow-brand-500/20">
+                    <i class="fa-solid fa-address-card text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+                        CardVault AI
+                    </h1>
+                    <p class="text-xs text-slate-400 hidden sm:block">智慧名片 OCR 辨識與 Google Sheet 雲端同步系統</p>
+                </div>
+            </div>
+
+            <!-- Action Controls -->
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                <!-- Google Sites Embedding Help Button -->
+                <button onclick="openSitesGuideModal()" class="px-3 py-2 rounded-lg bg-slate-700/60 hover:bg-slate-700 text-slate-300 text-xs font-medium transition border border-slate-600/50 flex items-center space-x-1" title="如何嵌入 Google 協作平台">
+                    <i class="fa-solid fa-globe text-cyan-400"></i>
+                    <span class="hidden md:inline">協作平台嵌入教學</span>
+                </button>
+
+                <!-- System Config Button -->
+                <button id="btn-open-settings" onclick="openSettingsModal()" class="flex items-center space-x-2 px-3 py-2 rounded-lg bg-slate-700/60 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-medium transition border border-slate-600/50">
+                    <i class="fa-solid fa-sliders text-emerald-400"></i>
+                    <span class="hidden md:inline">系統設定 (API & Sheet)</span>
+                    <span id="sheet-sync-badge" class="w-2.5 h-2.5 rounded-full bg-slate-500" title="連線狀態"></span>
+                </button>
+
+                <!-- Scan Card Button -->
+                <button onclick="openScanModal()" class="flex items-center space-x-2 px-3.5 py-2 rounded-lg bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-semibold shadow-md shadow-brand-500/20 transition hover:scale-[1.02] active:scale-[0.98]">
+                    <i class="fa-solid fa-camera"></i>
+                    <span>掃描新名片</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col space-y-6">
+        
+        <!-- Stats Summary Bar -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 flex items-center space-x-4">
+                <div class="p-3 bg-indigo-500/10 text-indigo-400 rounded-lg">
+                    <i class="fa-solid fa-id-card text-xl"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 font-medium">總名片數量</p>
+                    <p id="stat-total" class="text-xl font-bold text-slate-100">0</p>
+                </div>
+            </div>
+            <div class="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 flex items-center space-x-4">
+                <div class="p-3 bg-emerald-500/10 text-emerald-400 rounded-lg">
+                    <i class="fa-solid fa-building text-xl"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 font-medium">涵蓋公司數</p>
+                    <p id="stat-companies" class="text-xl font-bold text-slate-100">0</p>
+                </div>
+            </div>
+            <div class="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 flex items-center space-x-4">
+                <div class="p-3 bg-cyan-500/10 text-cyan-400 rounded-lg">
+                    <i class="fa-solid fa-cloud-arrow-up text-xl"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-400 font-medium">Sheet 已同步</p>
+                    <p id="stat-synced" class="text-xl font-bold text-slate-100">0</p>
+                </div>
+            </div>
+            <div class="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 flex items-center space-x-4">
+                <div class="p-3 bg-amber-500/10 text-amber-400 rounded-lg">
+                    <i class="fa-solid fa-clock text-xl"></i>
+                </div>
+                <div class="overflow-hidden">
+                    <p class="text-xs text-slate-400 font-medium">最近新增</p>
+                    <p id="stat-recent" class="text-sm font-semibold text-slate-200 truncate">無資料</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls & Filter Toolbar -->
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
+            <!-- Search Bar -->
+            <div class="relative w-full md:w-80">
+                <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                <input type="text" id="search-input" oninput="renderCards()" placeholder="搜尋姓名、公司、職稱、電話..."
+                    class="w-full bg-slate-900/80 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition">
+            </div>
+
+            <!-- Tags Filter & Export Options -->
+            <div class="flex items-center space-x-3 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+                <select id="tag-filter" onchange="renderCards()" class="bg-slate-900/80 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-brand-500">
+                    <option value="">所有分類/標籤</option>
+                </select>
+
+                <button onclick="exportToCSV()" class="flex items-center space-x-2 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition whitespace-nowrap">
+                    <i class="fa-solid fa-file-csv text-emerald-400"></i>
+                    <span>匯出 CSV</span>
+                </button>
+
+                <button onclick="syncAllUnsynced()" class="flex items-center space-x-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition whitespace-nowrap shadow-sm">
+                    <i class="fa-solid fa-rotate"></i>
+                    <span>全部同步至 Sheet</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Cards Grid Container -->
+        <div id="cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 flex-1">
+            <!-- Dynamically populated cards -->
+        </div>
+    </main>
+
+    <!-- OCR Scan & Add Card Modal -->
+    <div id="scan-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <!-- Modal Header -->
+            <div class="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-wand-magic-sparkles text-brand-500 text-lg"></i>
+                    <h2 class="text-lg font-bold text-slate-100">名片 AI 掃描與編輯</h2>
+                </div>
+                <button onclick="closeScanModal()" class="text-slate-400 hover:text-slate-200 p-1 rounded-lg">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Modal Content (Grid layout: Left Image/Scan, Right Form) -->
+            <div class="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
+                <!-- Left Column: Camera / Image Capture -->
+                <div class="md:col-span-5 flex flex-col space-y-4">
+                    <div id="upload-zone" class="relative border-2 border-dashed border-slate-600 hover:border-brand-500 rounded-xl p-4 flex flex-col items-center justify-center min-h-[220px] bg-slate-900/50 transition cursor-pointer group">
+                        <input type="file" id="card-file-input" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer" onchange="handleFileSelect(event)">
+                        
+                        <!-- Preview Image Container -->
+                        <div id="preview-container" class="hidden relative w-full h-full flex items-center justify-center overflow-hidden rounded-lg">
+                            <img id="card-preview-img" src="" alt="Card Preview" class="max-h-[200px] w-auto object-contain rounded">
+                            <div id="scan-overlay" class="hidden absolute inset-0 bg-brand-500/10 pointer-events-none">
+                                <div class="w-full h-1 bg-brand-500 shadow-[0_0_15px_#6366f1] scan-laser"></div>
+                            </div>
+                        </div>
+
+                        <!-- Dropzone placeholder -->
+                        <div id="upload-placeholder" class="text-center p-4">
+                            <div class="w-12 h-12 rounded-full bg-slate-800 text-brand-400 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition">
+                                <i class="fa-solid fa-cloud-arrow-up text-2xl"></i>
+                            </div>
+                            <p class="text-sm font-medium text-slate-200">點擊上傳或拖曳名片圖片</p>
+                            <p class="text-xs text-slate-400 mt-1">支援 JPG, PNG, WEBP 格式</p>
+                        </div>
+                    </div>
+
+                    <!-- Camera Action buttons -->
+                    <div class="flex gap-2">
+                        <button onclick="triggerCamera()" class="flex-1 py-2 px-3 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold rounded-lg flex items-center justify-center space-x-2 transition">
+                            <i class="fa-solid fa-camera"></i>
+                            <span>使用鏡頭拍攝</span>
+                        </button>
+                        <button id="btn-start-ocr" onclick="processCardOCR()" disabled class="flex-1 py-2 px-3 bg-brand-600 hover:bg-brand-500 disabled:bg-slate-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg flex items-center justify-center space-x-2 transition shadow">
+                            <i class="fa-solid fa-brain"></i>
+                            <span>AI 智慧辨識</span>
+                        </button>
+                    </div>
+
+                    <!-- Hidden Video element for camera stream -->
+                    <div id="camera-container" class="hidden relative rounded-xl overflow-hidden bg-black border border-slate-700">
+                        <video id="camera-stream" autoplay playsinline class="w-full h-48 object-cover"></video>
+                        <button onclick="captureCameraPhoto()" class="absolute bottom-3 left-1/2 -translate-x-1/2 bg-brand-600 text-white px-4 py-1.5 rounded-full text-xs font-bold shadow-lg flex items-center space-x-1">
+                            <i class="fa-solid fa-circle text-red-500"></i>
+                            <span>拍照</span>
+                        </button>
+                    </div>
+
+                    <div id="ocr-status-msg" class="text-xs text-slate-400 text-center min-h-[20px]">
+                        請上傳或拍攝名片，並點擊「AI 智慧辨識」
+                    </div>
+                </div>
+
+                <!-- Right Column: Extracted Business Card Fields -->
+                <div class="md:col-span-7 flex flex-col space-y-3">
+                    <h3 class="text-sm font-semibold text-brand-400 flex items-center space-x-2">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                        <span>辨識結果與編輯</span>
+                    </h3>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">姓名 *</label>
+                            <input type="text" id="field-name" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-brand-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">職稱</label>
+                            <input type="text" id="field-title" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-brand-500">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">公司名稱 *</label>
+                        <input type="text" id="field-company" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-brand-500">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">手機號碼</label>
+                            <input type="text" id="field-mobile" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-brand-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">公司電話</label>
+                            <input type="text" id="field-phone" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-brand-500">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">電子郵件</label>
+                            <input type="email" id="field-email" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-brand-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">公司網站</label>
+                            <input type="text" id="field-website" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-brand-500">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">公司地址</label>
+                        <input type="text" id="field-address" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-brand-500">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">產業/標籤 (逗號分隔)</label>
+                            <input type="text" id="field-tags" placeholder="科技, 業務, 合作夥伴" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-brand-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">備註 / 會面紀錄</label>
+                            <input type="text" id="field-note" placeholder="例如：展會認識、討論專案..." class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-brand-500">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Footer Controls -->
+            <div class="px-6 py-4 bg-slate-800/80 border-t border-slate-700 flex items-center justify-between">
+                <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+                    <input type="checkbox" id="auto-sync-check" checked class="rounded border-slate-700 text-brand-600 focus:ring-brand-500">
+                    <span>儲存時自動寫入 Google Sheet</span>
+                </label>
+
+                <div class="flex items-center space-x-3">
+                    <button onclick="closeScanModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium rounded-lg transition">
+                        取消
+                    </button>
+                    <button onclick="saveCard()" class="px-5 py-2 bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-sm font-bold rounded-lg shadow-md transition">
+                        儲存名片
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System & Google Sheet Configuration Modal -->
+    <div id="settings-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl">
+            <div class="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
+                <div class="flex items-center space-x-2 text-emerald-400">
+                    <i class="fa-solid fa-sliders text-xl"></i>
+                    <h2 class="text-lg font-bold text-slate-100">系統 API Key 與 Google Sheet 串接設定</h2>
+                </div>
+                <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-slate-200">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+                <!-- Gemini API Key Config -->
+                <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-700/80 space-y-2">
+                    <label class="block text-sm font-bold text-brand-400 flex items-center space-x-1.5">
+                        <i class="fa-solid fa-key"></i>
+                        <span>1. Gemini API Key (用於名片 OCR 辨識)</span>
+                    </label>
+                    <input type="password" id="gemini-key-input" placeholder="貼上您的 Gemini API Key (例如：AIzaSy...)" 
+                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-brand-500">
+                    <p class="text-xs text-slate-400">
+                        您可以直接在網頁原始碼的 <code class="text-brand-300 font-mono">DEFAULT_GEMINI_API_KEY</code> 欄位預填，或在此處輸入（會儲存於瀏覽器快取）。
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-brand-400 hover:underline">
+                            <i class="fa-solid fa-arrow-up-right-from-square text-[10px] mr-0.5"></i>前往 Google AI Studio 免費申請 API Key
+                        </a>
+                    </p>
+                </div>
+
+                <!-- Google Apps Script URL Config -->
+                <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-700/80 space-y-2">
+                    <label class="block text-sm font-bold text-emerald-400 flex items-center space-x-1.5">
+                        <i class="fa-solid fa-file-excel"></i>
+                        <span>2. Google Apps Script Web App URL (用於試算表同步)</span>
+                    </label>
+                    <input type="text" id="gsheet-url-input" placeholder="https://script.google.com/macros/s/.../exec" 
+                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-500">
+                    <p class="text-xs text-slate-400">
+                        可直接在原始碼的 <code class="text-emerald-300 font-mono">DEFAULT_GOOGLE_SHEET_URL</code> 預填網址。
+                    </p>
+                </div>
+
+                <!-- Google Apps Script URL Config -->
+                <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-700/80 space-y-2">
+                    <label class="block text-sm font-bold text-emerald-400 flex items-center space-x-1.5">
+                        <i class="fa-solid fa-file-excel"></i>
+                        <span>2. Google Apps Script Web App URL (用於試算表同步)</span>
+                    </label>
+                    <input type="text" id="gsheet-url-input" placeholder="https://script.google.com/macros/s/.../exec" 
+                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-500">
+                    <p class="text-xs text-slate-400">貼上部署獲得的 Web App 網址，名片新增時將自動同步寫入 Google 試算表。</p>
+                </div>
+
+                <!-- Instruction Steps & Script Source Code -->
+                <div class="bg-slate-900/90 rounded-xl p-4 border border-slate-700/80 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h4 class="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center space-x-1">
+                            <i class="fa-solid fa-code"></i>
+                            <span>Google Apps Script 完整程式碼與步驟：</span>
+                        </h4>
+                        <button onclick="copyAppsScriptCode()" class="text-xs px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 transition flex items-center space-x-1">
+                            <i class="fa-solid fa-copy"></i>
+                            <span>複製程式碼</span>
+                        </button>
+                    </div>
+
+                    <div class="relative">
+                        <pre id="apps-script-code" class="bg-slate-950 p-3 rounded-lg text-[11px] font-mono text-emerald-300 overflow-x-auto border border-slate-800">
+function doPost(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    
+    // 如果是全新空白工作表，自動寫入第一行欄位標題
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(["建立時間", "姓名", "職稱", "公司名稱", "手機", "公司電話", "Email", "網站", "地址", "標籤", "備註"]);
+    }
+    
+    var data = JSON.parse(e.postData.contents);
+    
+    sheet.appendRow([
+      new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }),
+      data.name || '',
+      data.title || '',
+      data.company || '',
+      data.mobile || '',
+      data.phone || '',
+      data.email || '',
+      data.website || '',
+      data.address || '',
+      Array.isArray(data.tags) ? data.tags.join(', ') : (data.tags || ''),
+      data.note || ''
+    ]);
+    
+    return ContentService.createTextOutput(JSON.stringify({ result: "success" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({ result: "error", message: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doGet() {
+  return ContentService.createTextOutput("CardVault Google Sheet Webhook is Live!");
+}</pre>
+                    </div>
+
+                    <ol class="list-decimal list-inside text-xs text-slate-300 space-y-1.5 leading-relaxed pt-1">
+                        <li>開啟您的 Google 試算表，點選選單 **「擴充功能」 &gt; 「Apps Script」**。</li>
+                        <li>清空預設程式碼，貼上上方複製的完整程式碼並儲存。</li>
+                        <li>點選右上角 **「部署」 &gt; 「新增部署」**。</li>
+                        <li>類型選 **「網頁應用程式 (Web App)」**，執行身份選 **「我」**，存取權限選 **「所有人 (Anyone)」**。</li>
+                        <li>點選部署授權後，將產生的 **網頁應用程式網址** 貼入上方欄位中！</li>
+                    </ol>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 bg-slate-800/80 border-t border-slate-700 flex justify-between items-center">
+                <button onclick="testSheetConnection()" class="px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg transition">
+                    <i class="fa-solid fa-paper-plane mr-1 text-emerald-400"></i>測試 Sheet 連線
+                </button>
+                <div class="flex space-x-3">
+                    <button onclick="closeSettingsModal()" class="px-4 py-2 bg-slate-700 text-slate-300 text-sm font-medium rounded-lg">取消</button>
+                    <button onclick="saveSettings()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-lg shadow-md transition">儲存設定</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Google Sites Embed Instruction Modal -->
+    <div id="sites-guide-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl">
+            <div class="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
+                <div class="flex items-center space-x-2 text-cyan-400">
+                    <i class="fa-solid fa-globe text-xl"></i>
+                    <h2 class="text-lg font-bold text-slate-100">發布至 Google 協作平台 (Google Sites) 教學</h2>
+                </div>
+                <button onclick="closeSitesGuideModal()" class="text-slate-400 hover:text-slate-200">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4 text-xs text-slate-300 leading-relaxed max-h-[70vh] overflow-y-auto">
+                <p class="text-sm font-semibold text-slate-100">您可以輕鬆將此智慧名片管理系統嵌入到您公司的 Google 協作平台網站：</p>
+                
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700 space-y-2">
+                    <p class="font-bold text-brand-400 text-sm">步驟一：複製本網頁完整 HTML 程式碼</p>
+                    <p>請將本 HTML 檔案的所有程式碼完整複製。</p>
+                </div>
+
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700 space-y-2">
+                    <p class="font-bold text-brand-400 text-sm">步驟二：開啟 Google 協作平台 (Google Sites)</p>
+                    <p>在頁面右側工具面板中點選 **「插入 (Insert)」 &gt; 「嵌入 (Embed)」**。</p>
+                </div>
+
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700 space-y-2">
+                    <p class="font-bold text-brand-400 text-sm">步驟三：貼上程式碼</p>
+                    <p>在彈出的視窗中切換至 **「內嵌程式碼 (Embed Code)」** 頁籤，將本網頁 HTML 程式碼貼入並按下一頁新增。</p>
+                </div>
+
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700 space-y-2">
+                    <p class="font-bold text-brand-400 text-sm">步驟四：調整尺寸與設定 API Key</p>
+                    <p>拉大嵌入區塊的高度以獲得最佳瀏覽體驗。預覽或發布網站後，點選本系統右上角的 **「系統設定」**，貼入您團隊的 Gemini API Key 與 Google Sheet 網址即可！</p>
+                </div>
+            </div>
+            <div class="px-6 py-4 bg-slate-800/80 border-t border-slate-700 flex justify-end">
+                <button onclick="closeSitesGuideModal()" class="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold rounded-lg">瞭解了</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detail View Modal -->
+    <div id="detail-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl">
+            <div id="detail-card-content">
+                <!-- Dynamically populated -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Delete Confirmation Modal (Replaces native confirm) -->
+    <div id="confirm-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-sm p-6 space-y-4 shadow-2xl">
+            <div class="flex items-center space-x-3 text-rose-400">
+                <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
+                <h3 class="text-base font-bold text-slate-100">確認刪除</h3>
+            </div>
+            <p class="text-xs text-slate-300">確定要刪除這張名片資料嗎？此動作無法復原。</p>
+            <div class="flex justify-end space-x-3 pt-2">
+                <button onclick="closeConfirmModal()" class="px-4 py-1.5 bg-slate-700 text-slate-300 text-xs font-medium rounded-lg">取消</button>
+                <button id="btn-execute-delete" class="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-lg shadow">刪除名片</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Overlay -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 flex items-center space-x-2 bg-slate-800 text-slate-100 border border-slate-700 px-4 py-3 rounded-xl shadow-2xl transition-all duration-300 opacity-0 translate-y-4 pointer-events-none">
+        <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span id="toast-msg" class="text-sm font-medium">訊息說明</span>
+    </div>
+
+    <script>
+        // =========================================================================
+        // 🛠️ 預設系統設定：請直接在下面雙引號內貼上您的 API Key 與 Google Sheet 網址
+        // 貼上後儲存 HTML，即可發布至 Google 協作平台，所有人皆可直接使用！
+        // =========================================================================
+        const DEFAULT_GEMINI_API_KEY = "AQ.Ab8RN6LT5CFxeT21nL3dvEFtzc_aiAcBd6xWaXkMUoizPwZjKA";   // 範例: "AIzaSy..."
+        const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbw2bQKIiTpCFniZZEiaM3I1ZFOoUibKD3D8pj1VyiFSnlYyL57c6AA1wUxTEAEfEyZn/exec"; // 範例: "https://script.google.com/macros/s/.../exec"
+        // =========================================================================
+
+        // 取得目前有效的 Gemini API Key (優先讀取使用者於介面設定的值，否則使用 HTML 頂部的預設 Key)
+        function getGeminiKey() {
+            const storedKey = localStorage.getItem('cardvault_gemini_key');
+            if (storedKey && storedKey.trim() !== "") {
+                return storedKey.trim();
+            }
+            return DEFAULT_GEMINI_API_KEY.trim();
+        }
+
+        // 取得目前有效的 Google Sheet Web App 網址
+        function getSheetUrl() {
+            const storedUrl = localStorage.getItem('cardvault_sheet_url');
+            if (storedUrl && storedUrl.trim() !== "") {
+                return storedUrl.trim();
+            }
+            return DEFAULT_GOOGLE_SHEET_URL.trim();
+        }
+
+        // System State
+        let cards = [];
+        let currentEditingImageBase64 = null;
+        let currentEditingImageMime = 'image/jpeg';
+        let mediaStream = null;
+        let pendingDeleteId = null;
+
+        // Init
+        window.addEventListener('DOMContentLoaded', () => {
+            loadCardsFromStorage();
+            updateSheetStatusBadge();
+            renderCards();
+            populateTagFilter();
+        });
+
+        // Toast Helper
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const msgEl = document.getElementById('toast-msg');
+            const iconEl = document.getElementById('toast-icon');
+
+            msgEl.textContent = message;
+            if (type === 'success') {
+                iconEl.className = 'fa-solid fa-circle-check text-emerald-400';
+            } else if (type === 'error') {
+                iconEl.className = 'fa-solid fa-triangle-exclamation text-rose-400';
+            } else {
+                iconEl.className = 'fa-solid fa-circle-info text-cyan-400';
+            }
+
+            toast.classList.remove('opacity-0', 'translate-y-4', 'pointer-events-none');
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-4', 'pointer-events-none');
+            }, 3500);
+        }
+
+        // Storage Management
+        function loadCardsFromStorage() {
+            try {
+                const stored = localStorage.getItem('cardvault_cards');
+                if (stored) cards = JSON.parse(stored);
+            } catch (e) {
+                console.error("Failed to load cards", e);
+                cards = [];
+            }
+        }
+
+        function saveCardsToStorage() {
+            localStorage.setItem('cardvault_cards', JSON.stringify(cards));
+            updateStats();
+            populateTagFilter();
+        }
+
+        function updateSheetStatusBadge() {
+            const badge = document.getElementById('sheet-sync-badge');
+            const sheetUrl = getSheetUrl();
+            if (sheetUrl) {
+                badge.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]';
+                badge.title = 'Google Sheet 已連接';
+            } else {
+                badge.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
+                badge.title = '未設定 Google Sheet 網址';
+            }
+        }
+
+        function renderCards() {
+            const container = document.getElementById('cards-container');
+            const search = document.getElementById('search-input').value.toLowerCase().trim();
+            const tagFilter = document.getElementById('tag-filter').value;
+
+            let filtered = cards.filter(c => {
+                const matchesSearch = !search || 
+                    (c.name && c.name.toLowerCase().includes(search)) ||
+                    (c.company && c.company.toLowerCase().includes(search)) ||
+                    (c.title && c.title.toLowerCase().includes(search)) ||
+                    (c.phone && c.phone.includes(search)) ||
+                    (c.mobile && c.mobile.includes(search)) ||
+                    (c.email && c.email.toLowerCase().includes(search));
+
+                const matchesTag = !tagFilter || (c.tags && c.tags.includes(tagFilter));
+
+                return matchesSearch && matchesTag;
+            });
+
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full py-16 flex flex-col items-center justify-center text-center bg-slate-800/20 border border-dashed border-slate-700/80 rounded-2xl">
+                        <div class="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center text-slate-500 mb-4">
+                            <i class="fa-solid fa-id-card-clip text-3xl"></i>
+                        </div>
+                        <h3 class="text-base font-semibold text-slate-300">尚無符合條件的名片</h3>
+                        <p class="text-xs text-slate-500 mt-1 max-w-sm">點擊右上角的「掃描新名片」開始體驗 AI 辨識名片並自動同步至 Google Sheet。</p>
+                    </div>
+                `;
+                updateStats();
+                return;
+            }
+
+            container.innerHTML = filtered.map(card => `
+                <div class="bg-slate-800/70 border border-slate-700/80 rounded-xl p-5 hover:border-brand-500/50 transition-all duration-200 hover:shadow-xl flex flex-col justify-between group">
+                    <div>
+                        <!-- Header with Name, Company & Sync Status -->
+                        <div class="flex items-start justify-between">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-600 flex items-center justify-center text-brand-400 text-lg font-bold shadow-inner flex-shrink-0">
+                                    ${card.name ? card.name.charAt(0) : '?'}
+                                </div>
+                                <div class="overflow-hidden">
+                                    <h3 class="font-bold text-slate-100 text-base truncate">
+                                        ${escapeHtml(card.name || '未知名稱')}
+                                    </h3>
+                                    <p class="text-xs text-brand-400 font-medium truncate">${escapeHtml(card.title || '職稱未填')}</p>
+                                </div>
+                            </div>
+                            <span title="${card.syncedToSheet ? '已同步至 Google Sheet' : '尚未同步'}" class="flex-shrink-0 text-xs px-2 py-0.5 rounded-full ${card.syncedToSheet ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-700 text-slate-400'}">
+                                <i class="fa-solid ${card.syncedToSheet ? 'fa-cloud-check' : 'fa-cloud-arrow-up'}"></i>
+                            </span>
+                        </div>
+
+                        <!-- Company Badge -->
+                        <div class="mt-3 flex items-center space-x-1.5 text-xs text-slate-300 font-semibold bg-slate-900/60 px-2.5 py-1.5 rounded-lg border border-slate-700/50 truncate">
+                            <i class="fa-solid fa-building text-slate-400 text-xs"></i>
+                            <span class="truncate">${escapeHtml(card.company || '未知公司')}</span>
+                        </div>
+
+                        <!-- Details list -->
+                        <div class="mt-4 space-y-2 text-xs text-slate-300">
+                            ${card.mobile || card.phone ? `
+                                <div class="flex items-center space-x-2 truncate">
+                                    <i class="fa-solid fa-phone text-slate-400 w-4"></i>
+                                    <span>${escapeHtml(card.mobile || card.phone)}</span>
+                                </div>
+                            ` : ''}
+                            ${card.email ? `
+                                <div class="flex items-center space-x-2 truncate">
+                                    <i class="fa-solid fa-envelope text-slate-400 w-4"></i>
+                                    <span class="truncate">${escapeHtml(card.email)}</span>
+                                </div>
+                            ` : ''}
+                            ${card.address ? `
+                                <div class="flex items-center space-x-2 truncate">
+                                    <i class="fa-solid fa-location-dot text-slate-400 w-4"></i>
+                                    <span class="truncate">${escapeHtml(card.address)}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <!-- Tags list -->
+                        ${card.tags && card.tags.length > 0 ? `
+                            <div class="mt-3 flex flex-wrap gap-1">
+                                ${card.tags.map(t => `<span class="text-[10px] bg-brand-500/10 text-brand-300 border border-brand-500/20 px-2 py-0.5 rounded-md">${escapeHtml(t)}</span>`).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- Bottom Action Controls -->
+                    <div class="mt-5 pt-3 border-t border-slate-700/60 flex items-center justify-between">
+                        <span class="text-[10px] text-slate-500">${new Date(card.createdAt).toLocaleDateString()}</span>
+                        <div class="flex items-center space-x-2">
+                            ${!card.syncedToSheet ? `
+                                <button onclick="syncSingleCard('${card.id}')" title="同步至 Google Sheet" class="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition">
+                                    <i class="fa-solid fa-cloud-arrow-up text-xs"></i>
+                                </button>
+                            ` : ''}
+                            <button onclick="viewCardDetails('${card.id}')" title="檢視詳細資料" class="p-1.5 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 transition">
+                                <i class="fa-solid fa-eye text-xs"></i>
+                            </button>
+                            <button onclick="promptDeleteCard('${card.id}')" title="刪除名片" class="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition">
+                                <i class="fa-solid fa-trash-can text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            updateStats();
+        }
+
+        function updateStats() {
+            document.getElementById('stat-total').textContent = cards.length;
+            const companies = new Set(cards.map(c => c.company).filter(Boolean));
+            document.getElementById('stat-companies').textContent = companies.size;
+            const synced = cards.filter(c => c.syncedToSheet).length;
+            document.getElementById('stat-synced').textContent = synced;
+            const recentCard = cards[0];
+            document.getElementById('stat-recent').textContent = recentCard ? `${recentCard.name} (${recentCard.company || ''})` : '無資料';
+        }
+
+        function populateTagFilter() {
+            const select = document.getElementById('tag-filter');
+            const tags = new Set();
+            cards.forEach(c => {
+                if (c.tags && Array.isArray(c.tags)) c.tags.forEach(t => tags.add(t));
+            });
+
+            const currentVal = select.value;
+            select.innerHTML = '<option value="">所有分類/標籤</option>' + 
+                Array.from(tags).map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+            select.value = currentVal;
+        }
+
+        async function processCardOCR() {
+            if (!currentEditingImageBase64) {
+                showToast("請先挑選或拍攝名片照片！", "error");
+                return;
+            }
+
+            const btn = document.getElementById('btn-start-ocr');
+            const statusMsg = document.getElementById('ocr-status-msg');
+            const overlay = document.getElementById('scan-overlay');
+
+            // 取得 API Key (優先讀取自訂鍵值，無則自動帶入程式碼頂端的預設值)
+            const apiKey = getGeminiKey();
+
+            if (!apiKey) {
+                statusMsg.innerHTML = `<span class="text-rose-400 font-medium"><i class="fa-solid fa-circle-exclamation mr-1"></i> 請在 HTML 原始碼頂端填入 API Key，或點擊右上角「系統設定」設定！</span>`;
+                showToast("未設定 API Key！請直接在 HTML 原始碼內填寫預設 Key", "error");
+                openSettingsModal();
+                return;
+            }
+
+            btn.disabled = true;
+            overlay.classList.remove('hidden');
+            statusMsg.innerHTML = `<span class="text-brand-400 animate-pulse"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Gemini AI 正在深度分析名片與結構欄位...</span>`;
+
+            try {
+                const cleanBase64 = currentEditingImageBase64.replace(/^data:image\/\w+;base64,/, "");
+
+                const systemPrompt = `你是一個專業的名片 OCR 資料提取助手。請分析圖片中的名片內容，將姓名、職稱、公司名稱、電話、手機號碼、Email、公司網站、地址、產業相關標籤（列出2-3個繁體中文標籤）與任何備註導出為指定的 JSON 格式。如果照片中缺乏某些欄位，請傳回空字串 ""。請務必使用繁體中文。`;
+
+                const payload = {
+                    contents: [
+                        {
+                            role: "user",
+                            parts: [
+                                { text: "請辨識這張名片圖像並導出結構化 JSON。" },
+                                {
+                                    inlineData: {
+                                        mimeType: currentEditingImageMime || "image/jpeg",
+                                        data: cleanBase64
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                name: { type: "STRING", description: "姓名" },
+                                title: { type: "STRING", description: "職稱" },
+                                company: { type: "STRING", description: "公司名稱" },
+                                mobile: { type: "STRING", description: "個人手機" },
+                                phone: { type: "STRING", description: "公司電話" },
+                                email: { type: "STRING", description: "電子郵件" },
+                                website: { type: "STRING", description: "公司網站" },
+                                address: { type: "STRING", description: "地址" },
+                                tags: { type: "ARRAY", items: { type: "STRING" }, description: "標籤/產業" },
+                                note: { type: "STRING", description: "額外備註" }
+                            },
+                            required: ["name", "company"]
+                        }
+                    }
+                };
+
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error(`API 錯誤狀態: ${response.status}`);
+
+                const result = await response.json();
+                const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (!jsonText) throw new Error("無法取得辨識結果");
+
+                const parsed = JSON.parse(jsonText);
+
+                // Auto populate extracted values
+                document.getElementById('field-name').value = parsed.name || '';
+                document.getElementById('field-title').value = parsed.title || '';
+                document.getElementById('field-company').value = parsed.company || '';
+                document.getElementById('field-mobile').value = parsed.mobile || '';
+                document.getElementById('field-phone').value = parsed.phone || '';
+                document.getElementById('field-email').value = parsed.email || '';
+                document.getElementById('field-website').value = parsed.website || '';
+                document.getElementById('field-address').value = parsed.address || '';
+                document.getElementById('field-tags').value = Array.isArray(parsed.tags) ? parsed.tags.join(', ') : (parsed.tags || '');
+                document.getElementById('field-note').value = parsed.note || '';
+
+                statusMsg.innerHTML = `<span class="text-emerald-400 font-medium"><i class="fa-solid fa-check-circle mr-1"></i> 辨識成功！可確認或修改右側欄位。</span>`;
+                showToast("名片辨識完成！");
+
+            } catch (err) {
+                console.error("OCR process error:", err);
+                statusMsg.innerHTML = `<span class="text-rose-400 font-medium"><i class="fa-solid fa-circle-exclamation mr-1"></i> 辨識失敗：請檢查 API Key 是否正確。</span>`;
+                showToast("辨識發生錯誤，請確認 API Key 是否設定正確", "error");
+            } finally {
+                btn.disabled = false;
+                overlay.classList.add('hidden');
+            }
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            currentEditingImageMime = file.type || 'image/jpeg';
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                currentEditingImageBase64 = e.target.result;
+                displayPreviewImage(currentEditingImageBase64);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function displayPreviewImage(src) {
+            document.getElementById('upload-placeholder').classList.add('hidden');
+            const container = document.getElementById('preview-container');
+            const img = document.getElementById('card-preview-img');
+            img.src = src;
+            container.classList.remove('hidden');
+            document.getElementById('btn-start-ocr').disabled = false;
+            stopCameraStream();
+        }
+
+        async function triggerCamera() {
+            const cameraContainer = document.getElementById('camera-container');
+            const video = document.getElementById('camera-stream');
+
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' },
+                    audio: false
+                });
+                video.srcObject = mediaStream;
+                cameraContainer.classList.remove('hidden');
+            } catch (err) {
+                console.error("Camera access error:", err);
+                showToast("無法存取鏡頭，請檢查瀏覽器拍攝授權", "error");
+            }
+        }
+
+        function captureCameraPhoto() {
+            const video = document.getElementById('camera-stream');
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            currentEditingImageMime = 'image/jpeg';
+            currentEditingImageBase64 = canvas.toDataURL('image/jpeg', 0.85);
+            displayPreviewImage(currentEditingImageBase64);
+        }
+
+        function stopCameraStream() {
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+            document.getElementById('camera-container').classList.add('hidden');
+        }
+
+        async function saveCard() {
+            const name = document.getElementById('field-name').value.trim();
+            const company = document.getElementById('field-company').value.trim();
+
+            if (!name && !company) {
+                showToast("請至少填寫「姓名」或「公司名稱」！", "error");
+                return;
+            }
+
+            const rawTags = document.getElementById('field-tags').value;
+            const tagsArray = rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+            const newCard = {
+                id: 'card_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                name: name,
+                title: document.getElementById('field-title').value.trim(),
+                company: company,
+                mobile: document.getElementById('field-mobile').value.trim(),
+                phone: document.getElementById('field-phone').value.trim(),
+                email: document.getElementById('field-email').value.trim(),
+                website: document.getElementById('field-website').value.trim(),
+                address: document.getElementById('field-address').value.trim(),
+                tags: tagsArray,
+                note: document.getElementById('field-note').value.trim(),
+                imageBase64: currentEditingImageBase64,
+                createdAt: new Date().toISOString(),
+                syncedToSheet: false
+            };
+
+            cards.unshift(newCard);
+
+            const autoSync = document.getElementById('auto-sync-check').checked;
+            if (autoSync && googleSheetUrl.trim()) {
+                await syncCardToSheet(newCard);
+            }
+
+            saveCardsToStorage();
+            renderCards();
+            closeScanModal();
+            showToast("名片新增成功！");
+        }
+
+        async function syncCardToSheet(card) {
+            const sheetUrl = getSheetUrl();
+            if (!sheetUrl) return false;
+
+            try {
+                await fetch(sheetUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(card)
+                });
+
+                card.syncedToSheet = true;
+                return true;
+            } catch (err) {
+                console.error("Failed to sync card to sheet:", err);
+                return false;
+            }
+        }
+
+        async function syncSingleCard(id) {
+            const sheetUrl = getSheetUrl();
+            if (!sheetUrl) {
+                showToast("請先設定 Google Sheet Web App 網址！", "error");
+                openSettingsModal();
+                return;
+            }
+
+            const card = cards.find(c => c.id === id);
+            if (!card) return;
+
+            showToast("正在同步至 Google Sheet...");
+            const success = await syncCardToSheet(card);
+            saveCardsToStorage();
+            renderCards();
+            showToast("同步請求已發送至 Google Sheet！");
+        }
+
+        async function syncAllUnsynced() {
+            const sheetUrl = getSheetUrl();
+            if (!sheetUrl) {
+                showToast("請先設定 Google Sheet Web App 網址！", "error");
+                openSettingsModal();
+                return;
+            }
+
+            const unsynced = cards.filter(c => !c.syncedToSheet);
+            if (unsynced.length === 0) {
+                showToast("所有名片皆已同步過！", "info");
+                return;
+            }
+
+            showToast(`正批次同步 ${unsynced.length} 張名片...`);
+            for (let card of unsynced) {
+                await syncCardToSheet(card);
+            }
+
+            saveCardsToStorage();
+            renderCards();
+            showToast("批次同步作業已發送！");
+        }
+
+        // Settings Modal Controls
+        function openSettingsModal() {
+            document.getElementById('gemini-key-input').value = localStorage.getItem('cardvault_gemini_key') || DEFAULT_GEMINI_API_KEY;
+            document.getElementById('gsheet-url-input').value = localStorage.getItem('cardvault_sheet_url') || DEFAULT_GOOGLE_SHEET_URL;
+            document.getElementById('settings-modal').classList.remove('hidden');
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        function saveSettings() {
+            const inputKey = document.getElementById('gemini-key-input').value.trim();
+            const inputUrl = document.getElementById('gsheet-url-input').value.trim();
+
+            localStorage.setItem('cardvault_gemini_key', inputKey);
+            localStorage.setItem('cardvault_sheet_url', inputUrl);
+
+            updateSheetStatusBadge();
+            closeSettingsModal();
+            showToast("系統 API 與 Google Sheet 設定已更新！");
+        }
+
+        async function testSheetConnection() {
+            const url = getSheetUrl();
+            if (!url) {
+                showToast("請先輸入或設定 Web App URL", "error");
+                return;
+            }
+
+            showToast("正在傳送測試封包...");
+            try {
+                await fetch(url, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: "連線測試", note: "CardVault 系統測試資料" })
+                });
+                showToast("測試封包發送成功！請檢查 Google 試算表。");
+            } catch (e) {
+                showToast("連線傳送失敗，請確認網址格式", "error");
+            }
+        }
+
+        function copyAppsScriptCode() {
+            const codeText = document.getElementById('apps-script-code').innerText;
+            const textarea = document.createElement('textarea');
+            textarea.value = codeText;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            showToast("Apps Script 程式碼已複製到剪貼簿！");
+        }
+
+        // Export CSV
+        function exportToCSV() {
+            if (cards.length === 0) {
+                showToast("尚無名片資料可供匯出！", "error");
+                return;
+            }
+
+            const headers = ["姓名", "職稱", "公司名稱", "手機號碼", "公司電話", "電子郵件", "公司網站", "公司地址", "標籤", "備註", "建立時間"];
+            const rows = cards.map(c => [
+                `"${(c.name || '').replace(/"/g, '""')}"`,
+                `"${(c.title || '').replace(/"/g, '""')}"`,
+                `"${(c.company || '').replace(/"/g, '""')}"`,
+                `"${(c.mobile || '').replace(/"/g, '""')}"`,
+                `"${(c.phone || '').replace(/"/g, '""')}"`,
+                `"${(c.email || '').replace(/"/g, '""')}"`,
+                `"${(c.website || '').replace(/"/g, '""')}"`,
+                `"${(c.address || '').replace(/"/g, '""')}"`,
+                `"${((c.tags || []).join(', ')).replace(/"/g, '""')}"`,
+                `"${(c.note || '').replace(/"/g, '""')}"`,
+                `"${new Date(c.createdAt).toLocaleString()}"`
+            ]);
+
+            const csvContent = "\uFEFF" + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `business_cards_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast("CSV 下載成功！");
+        }
+
+        // View Card Details
+        function viewCardDetails(id) {
+            const card = cards.find(c => c.id === id);
+            if (!card) return;
+
+            const modalContent = document.getElementById('detail-card-content');
+            modalContent.innerHTML = `
+                <div class="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
+                    <h3 class="text-base font-bold text-slate-100">${escapeHtml(card.name || '名片詳情')}</h3>
+                    <button onclick="closeDetailModal()" class="text-slate-400 hover:text-slate-200">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+                <div class="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+                    ${card.imageBase64 ? `
+                        <div class="bg-slate-900 p-2 rounded-xl border border-slate-700 flex justify-center">
+                            <img src="${card.imageBase64}" alt="Card Image" class="max-h-56 object-contain rounded-lg">
+                        </div>
+                    ` : ''}
+
+                    <div class="grid grid-cols-2 gap-4 text-xs">
+                        <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-700/50">
+                            <span class="text-slate-500 block mb-1">姓名 / 職稱</span>
+                            <span class="font-bold text-slate-100 text-sm">${escapeHtml(card.name || '-')}</span>
+                            <span class="text-brand-400 block">${escapeHtml(card.title || '-')}</span>
+                        </div>
+                        <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-700/50">
+                            <span class="text-slate-500 block mb-1">公司名稱</span>
+                            <span class="font-bold text-slate-100 text-sm">${escapeHtml(card.company || '-')}</span>
+                        </div>
+                        <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-700/50">
+                            <span class="text-slate-500 block mb-1">聯絡電話</span>
+                            <span class="text-slate-200">${escapeHtml(card.mobile || card.phone || '-')}</span>
+                        </div>
+                        <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-700/50">
+                            <span class="text-slate-500 block mb-1">Email</span>
+                            <span class="text-slate-200 truncate block">${escapeHtml(card.email || '-')}</span>
+                        </div>
+                        <div class="col-span-2 bg-slate-900/60 p-3 rounded-lg border border-slate-700/50">
+                            <span class="text-slate-500 block mb-1">地址</span>
+                            <span class="text-slate-200">${escapeHtml(card.address || '-')}</span>
+                        </div>
+                        ${card.note ? `
+                            <div class="col-span-2 bg-slate-900/60 p-3 rounded-lg border border-slate-700/50">
+                                <span class="text-slate-500 block mb-1">備註紀錄</span>
+                                <span class="text-slate-200">${escapeHtml(card.note)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+                <div class="px-6 py-4 bg-slate-800/80 border-t border-slate-700 flex justify-end">
+                    <button onclick="closeDetailModal()" class="px-4 py-2 bg-slate-700 text-slate-300 text-sm font-medium rounded-lg">關閉</button>
+                </div>
+            `;
+
+            document.getElementById('detail-modal').classList.remove('hidden');
+        }
+
+        function closeDetailModal() {
+            document.getElementById('detail-modal').classList.add('hidden');
+        }
+
+        // Custom Confirmation Modal for Delete (No native confirm alert)
+        function promptDeleteCard(id) {
+            pendingDeleteId = id;
+            document.getElementById('btn-execute-delete').onclick = executeDeleteCard;
+            document.getElementById('confirm-modal').classList.remove('hidden');
+        }
+
+        function closeConfirmModal() {
+            pendingDeleteId = null;
+            document.getElementById('confirm-modal').classList.add('hidden');
+        }
+
+        function executeDeleteCard() {
+            if (!pendingDeleteId) return;
+            cards = cards.filter(c => c.id !== pendingDeleteId);
+            saveCardsToStorage();
+            renderCards();
+            closeConfirmModal();
+            showToast("名片已成功刪除！");
+        }
+
+        // Modal Open/Close handlers
+        function openScanModal() {
+            resetScanForm();
+            document.getElementById('scan-modal').classList.remove('hidden');
+        }
+
+        function closeScanModal() {
+            stopCameraStream();
+            document.getElementById('scan-modal').classList.add('hidden');
+        }
+
+        function openSitesGuideModal() {
+            document.getElementById('sites-guide-modal').classList.remove('hidden');
+        }
+
+        function closeSitesGuideModal() {
+            document.getElementById('sites-guide-modal').classList.add('hidden');
+        }
+
+        function resetScanForm() {
+            currentEditingImageBase64 = null;
+            document.getElementById('card-file-input').value = '';
+            document.getElementById('upload-placeholder').classList.remove('hidden');
+            document.getElementById('preview-container').classList.add('hidden');
+            document.getElementById('btn-start-ocr').disabled = true;
+            document.getElementById('ocr-status-msg').innerHTML = '請上傳或拍攝名片，並點擊「AI 智慧辨識」';
+
+            document.getElementById('field-name').value = '';
+            document.getElementById('field-title').value = '';
+            document.getElementById('field-company').value = '';
+            document.getElementById('field-mobile').value = '';
+            document.getElementById('field-phone').value = '';
+            document.getElementById('field-email').value = '';
+            document.getElementById('field-website').value = '';
+            document.getElementById('field-address').value = '';
+            document.getElementById('field-tags').value = '';
+            document.getElementById('field-note').value = '';
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+    </script>
+</body>
+</html>
